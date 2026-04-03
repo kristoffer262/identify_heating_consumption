@@ -1,0 +1,9 @@
+agents:
+
+- data_agent
+- heating_detection_agent
+- feature_agent
+- preprocessing_agent
+- modeling_agent
+- evaluation_agent
+- visualization_agent

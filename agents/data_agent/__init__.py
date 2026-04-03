@@ -37,11 +37,11 @@ class DataAgent(BaseAgent):
         # Determine which files to load
         if resolution:
             if resolution == 'hourly':
-                data_files = ["consumption_hourly.csv", "smhi-opendata_1_74460_airtemp.csv"]
+                data_files = ["consumption_hourly.csv", "temperature_synthetic_2025_07_11.csv"]
             elif resolution == 'quarterly':
-                data_files = ["consumption_quarterly.csv", "smhi-opendata_1_74460_airtemp.csv"]
+                data_files = ["consumption_quarterly.csv", "temperature_synthetic_2025_07_11.csv"]
             elif resolution == 'two_minutes':
-                data_files = ["consumption_two_minutes.csv", "smhi-opendata_1_74460_airtemp.csv"]
+                data_files = ["consumption_two_minutes.csv", "temperature_synthetic_2025_07_11.csv"]
             else:
                 logger.warning(f"Unknown resolution {resolution}, loading all data")
                 data_files = None
@@ -51,7 +51,7 @@ class DataAgent(BaseAgent):
                 "consumption_hourly.csv",
                 "consumption_quarterly.csv",
                 "consumption_two_minutes.csv",
-                "smhi-opendata_1_74460_airtemp.csv"
+                "temperature_synthetic_2025_07_11.csv"
             ]
 
         loaded_data = {}

@@ -55,7 +55,7 @@ class FeatureAgent(BaseAgent):
     def _get_temperature_data(self, data: Dict[str, pd.DataFrame]) -> Optional[pd.DataFrame]:
         """Get the temperature data."""
         for name, df in data.items():
-            if 'airtemp' in name.lower():
+            if 'temperature' in name.lower() or 'airtemp' in name.lower():
                 return df
         return None
 
@@ -103,25 +103,29 @@ class FeatureAgent(BaseAgent):
         """Create temperature-related features."""
         df = df.copy()
 
-        # Resample temperature data to match consumption data frequency
-        if not df.index.equals(temperature_data.index):
-            # Simple alignment - in practice, you'd want more sophisticated interpolation
-            temp_resampled = temperature_data.reindex(df.index, method='nearest')
-        else:
-            temp_resampled = temperature_data
+        # Align temperature data with consumption data
+        try:
+            if not df.index.equals(temperature_data.index):
+                # Use join to align indices, forward fill any gaps
+                temp_aligned = temperature_data.reindex(df.index, fill_value=np.nan)
+                temp_aligned = temp_aligned.ffill().bfill()
+            else:
+                temp_aligned = temperature_data
 
-        # Add temperature features
-        temp_col = [col for col in temp_resampled.columns if 'temp' in col.lower()]
-        if temp_col:
-            df['temperature'] = temp_resampled[temp_col[0]]
+            # Add temperature features
+            temp_col = [col for col in temp_aligned.columns if 'temp' in col.lower()]
+            if temp_col and len(temp_aligned) > 0 and temp_aligned[temp_col[0]].notna().sum() > 0:
+                df['temperature'] = temp_aligned[temp_col[0]].values
 
-            # Temperature categories
-            df['temp_category'] = pd.cut(df['temperature'],
-                                       bins=[-50, 0, 10, 20, 50],
-                                       labels=['freezing', 'cold', 'mild', 'warm'])
+                # Temperature categories
+                df['temp_category'] = pd.cut(df['temperature'],
+                                           bins=[-50, 0, 10, 20, 50],
+                                           labels=['freezing', 'cold', 'mild', 'warm'])
 
-            # Heating degree days (simplified)
-            df['heating_degree_days'] = np.maximum(18 - df['temperature'], 0)
+                # Heating degree days (simplified)
+                df['heating_degree_days'] = np.maximum(18 - df['temperature'], 0)
+        except Exception as e:
+            logger.warning(f"Failed to create temperature features: {e}")
 
         return df
 

@@ -18,18 +18,34 @@ class DataAgent(BaseAgent):
     def __init__(self, config: Optional[Dict] = None):
         super().__init__("data_agent", config)
         self.data_path = Path(self.config.get("data_path", "data"))
+        # Set data resolution preference: 'hourly', 'quarterly' (15-min), or 'two_minutes'
+        self.preferred_resolution = self.config.get("preferred_resolution", "quarterly")
         self._data_cache: Dict[str, pd.DataFrame] = {}
 
-    def run(self, data_files: Optional[List[str]] = None) -> Dict[str, pd.DataFrame]:
+    def run(self, data_files: Optional[List[str]] = None, resolution: Optional[str] = None) -> Dict[str, pd.DataFrame]:
         """
         Load specified data files or all available data.
 
         Args:
-            data_files: List of data file names to load. If None, loads all.
+            data_files: List of data file names to load. If None, loads based on resolution.
+            resolution: Preferred resolution ('hourly', 'quarterly', 'two_minutes'). 
+                       If specified, loads only that resolution + temperature data.
 
         Returns:
             Dictionary mapping file names to DataFrames.
         """
+        # Determine which files to load
+        if resolution:
+            if resolution == 'hourly':
+                data_files = ["consumption_hourly.csv", "smhi-opendata_1_74460_airtemp.csv"]
+            elif resolution == 'quarterly':
+                data_files = ["consumption_quarterly.csv", "smhi-opendata_1_74460_airtemp.csv"]
+            elif resolution == 'two_minutes':
+                data_files = ["consumption_two_minutes.csv", "smhi-opendata_1_74460_airtemp.csv"]
+            else:
+                logger.warning(f"Unknown resolution {resolution}, loading all data")
+                data_files = None
+        
         if data_files is None:
             data_files = [
                 "consumption_hourly.csv",

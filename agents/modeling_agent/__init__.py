@@ -36,6 +36,8 @@ class ModelingAgent(BaseAgent):
         super().__init__("modeling_agent", config)
         self.models_path = Path(self.config.get("models_path", "models"))
         self.models_path.mkdir(exist_ok=True)
+        # Preferred data resolution for analysis
+        self.preferred_resolution = self.config.get("preferred_resolution", "quarterly")
         self.best_model = None
         self.model_performance = {}
 
@@ -51,12 +53,28 @@ class ModelingAgent(BaseAgent):
         """
         results = {}
 
-        # Find consumption data with heating labels
+        # Find consumption data with heating labels - prefer specified resolution
         consumption_data = None
-        for name, df in data.items():
-            if 'consumption' in name.lower() and 'heating_detected' in df.columns:
-                consumption_data = df
-                break
+        resolution_priority = {
+            'two_minutes': 'consumption_two_minutes.csv',
+            'quarterly': 'consumption_quarterly.csv',
+            'hourly': 'consumption_hourly.csv'
+        }
+        
+        # Try to find preferred resolution first
+        preferred_name = resolution_priority.get(self.preferred_resolution)
+        if preferred_name and preferred_name in data:
+            if 'heating_detected' in data[preferred_name].columns:
+                consumption_data = data[preferred_name]
+                logger.info(f"Using {preferred_name} (preferred resolution: {self.preferred_resolution})")
+        
+        # Fallback: find any consumption data with heating labels
+        if consumption_data is None:
+            for name, df in data.items():
+                if 'consumption' in name.lower() and 'heating_detected' in df.columns:
+                    consumption_data = df
+                    logger.info(f"Using {name} for modeling")
+                    break
 
         if consumption_data is None:
             logger.error("No consumption data with heating labels found")

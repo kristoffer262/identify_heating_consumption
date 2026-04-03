@@ -44,12 +44,17 @@ def main():
     logger.info(f"Loaded configuration for agents: {config.get('agents', [])}")
 
     # Initialize agents
+    # Configure to use quarterly (15-minute) resolution for better analytical detail
+    agent_config = {
+        'preferred_resolution': 'quarterly',  # 'hourly', 'quarterly' (15-min), or 'two_minutes'
+    }
+    
     agents = {
-        'data_agent': DataAgent(),
+        'data_agent': DataAgent(agent_config),
         'preprocessing_agent': PreprocessingAgent(),
         'feature_agent': FeatureAgent(),
         'heating_detection_agent': HeatingDetectionAgent(),
-        'modeling_agent': ModelingAgent(),
+        'modeling_agent': ModelingAgent(agent_config),
         'evaluation_agent': EvaluationAgent(),
         'visualization_agent': VisualizationAgent()
     }
@@ -61,7 +66,7 @@ def main():
         # 1. Data Loading
         logger.info("Step 1: Loading data")
         data_agent = agents['data_agent']
-        raw_data = data_agent.run()
+        raw_data = data_agent.run(resolution=agent_config.get('preferred_resolution'))
         results['raw_data'] = raw_data
 
         # 2. Preprocessing

@@ -91,3 +91,17 @@ Can you make this v0.2.1 instead?
 7:
 the plots still seems to have no variation in it. What could the problem be?
 
+8:
+Add a plot that shows the testset with total amount of energy consumption and how much of this is considered to be from heating
+
+9:
+I dont see the file
+
+10:
+the plot looks very messy, could something with the indexing be wrong?
+
+11:
+the file seems not to be updated, make sure the changes take effect, then make this version 0.3.0, also with a tag that indicates this
+
+12:
+some files are not in the repo, make sure all files are added and pushed to the repo as v0.3.1

@@ -53,7 +53,7 @@ class EvaluationAgent(BaseAgent):
             evaluation_results['model_insights'] = self._generate_model_insights(models, data)
 
             # Generate plots
-            self._generate_evaluation_plots(models, data, performance)
+            self._generate_evaluation_plots(models, data, performance, modeling_results)
 
             logger.info("Evaluation completed successfully")
 
@@ -182,7 +182,7 @@ class EvaluationAgent(BaseAgent):
         return insights
 
     def _generate_evaluation_plots(self, models: Dict[str, Any], data: Dict[str, pd.DataFrame],
-                                 performance: Dict[str, Dict[str, float]]):
+                                 performance: Dict[str, Dict[str, float]], modeling_results: Dict[str, Any]):
         """Generate evaluation plots."""
         try:
             # Model comparison plot
@@ -195,6 +195,11 @@ class EvaluationAgent(BaseAgent):
 
             # Prediction vs actual plot for best model
             self._plot_predictions_vs_actual(models, data)
+
+            # Test set consumption and heating breakdown plot
+            test_set = modeling_results.get('test_set')
+            if isinstance(test_set, pd.DataFrame) and not test_set.empty:
+                self._plot_test_consumption_vs_heating(test_set)
 
         except Exception as e:
             logger.error(f"Failed to generate plots: {e}")
@@ -281,3 +286,31 @@ class EvaluationAgent(BaseAgent):
 
         except Exception as e:
             logger.error(f"Failed to plot predictions vs actual: {e}")
+
+    def _plot_test_consumption_vs_heating(self, test_set: pd.DataFrame):
+        """Plot test set total consumption and heating component."""
+        if test_set.empty:
+            return
+
+        if 'total_consumption' not in test_set.columns or 'heating_consumption' not in test_set.columns:
+            return
+
+        # Sort by timestamp because train_test_split shuffles the index
+        if isinstance(test_set.index, pd.DatetimeIndex):
+            test_set = test_set.sort_index()
+
+        plt.figure(figsize=(14, 6))
+        plt.plot(test_set.index, test_set['total_consumption'], label='Total Consumption', alpha=0.8, linewidth=1)
+        plt.plot(test_set.index, test_set['heating_consumption'], label='Heating Consumption', alpha=0.8, linewidth=1)
+
+        plt.title('Test Set: Total Consumption and Heating Consumption')
+        plt.xlabel('Time')
+        plt.ylabel('Energy Consumption')
+        plt.legend()
+        plt.grid(alpha=0.3)
+
+        file_path = f"{self.plots_path}/test_set_total_vs_heating.png"
+        plt.savefig(file_path, dpi=300, bbox_inches='tight')
+        plt.close()
+
+        return file_path

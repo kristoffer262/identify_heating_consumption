@@ -88,13 +88,41 @@ class ModelingAgent(BaseAgent):
                 logger.error("Failed to prepare modeling data")
                 return results
 
-            # Train models
-            models = self._train_models(X, y)
+            # Train/test split (for plotting and detailed test-set analyses)
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.2, random_state=42
+            )
+
+            # Train models on train split
+            models = self._train_models(X_train, y_train)
             results['models'] = models
 
-            # Evaluate models
-            performance = self._evaluate_models(models, X, y)
+            # Evaluate models on held-out test split
+            performance = self._evaluate_models(models, X_train, X_test, y_train, y_test)
             results['performance'] = performance
+
+            # Store test set details for plotting (total vs heating)
+            consumption_cols = [col for col in consumption_data.columns if any(keyword in col.lower() for keyword in ['consumption', 'energy', 'kwh'])]
+            if consumption_cols:
+                total_consumption = consumption_data[consumption_cols[0]].loc[X_test.index]
+            else:
+                total_consumption = pd.Series(index=X_test.index, dtype=float)
+
+            if 'baseline_consumption' in consumption_data.columns:
+                baseline_consumption = consumption_data['baseline_consumption'].loc[X_test.index]
+            else:
+                baseline_consumption = pd.Series(0, index=X_test.index)
+
+            test_set = pd.DataFrame({
+                'total_consumption': total_consumption,
+                'baseline_consumption': baseline_consumption,
+                'heating_consumption': y_test,
+            }, index=X_test.index)
+
+            if 'heating_detected' in consumption_data.columns:
+                test_set['heating_detected'] = consumption_data['heating_detected'].loc[X_test.index]
+
+            results['test_set'] = test_set
 
             # Select best model
             self.best_model = self._select_best_model(models, performance)
@@ -162,14 +190,9 @@ class ModelingAgent(BaseAgent):
 
         return X, y
 
-    def _train_models(self, X: pd.DataFrame, y: pd.Series) -> Dict[str, Any]:
-        """Train multiple models."""
+    def _train_models(self, X_train: pd.DataFrame, y_train: pd.Series) -> Dict[str, Any]:
+        """Train multiple models on the provided train set."""
         models = {}
-
-        # Split data
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
 
         # Linear Regression
         lr_model = Pipeline([
@@ -198,27 +221,25 @@ class ModelingAgent(BaseAgent):
 
         return models
 
-    def _evaluate_models(self, models: Dict[str, Any], X: pd.DataFrame, y: pd.Series) -> Dict[str, Dict[str, float]]:
-        """Evaluate trained models."""
+    def _evaluate_models(self, models: Dict[str, Any], X_train: pd.DataFrame, X_test: pd.DataFrame,
+                         y_train: pd.Series, y_test: pd.Series) -> Dict[str, Dict[str, float]]:
+        """Evaluate trained models on train and test splits."""
         performance = {}
 
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=0.2, random_state=42
-        )
+        X_full = pd.concat([X_train, X_test])
+        y_full = pd.concat([y_train, y_test])
 
         for name, model in models.items():
             try:
-                # Predictions
                 y_pred_train = model.predict(X_train)
                 y_pred_test = model.predict(X_test)
 
-                # Metrics
                 metrics = {
                     'train_mse': mean_squared_error(y_train, y_pred_train),
                     'test_mse': mean_squared_error(y_test, y_pred_test),
                     'train_r2': r2_score(y_train, y_pred_train),
                     'test_r2': r2_score(y_test, y_pred_test),
-                    'cv_score': np.mean(cross_val_score(model, X, y, cv=5, scoring='r2'))
+                    'cv_score': np.mean(cross_val_score(model, X_full, y_full, cv=5, scoring='r2'))
                 }
 
                 performance[name] = metrics
@@ -229,7 +250,6 @@ class ModelingAgent(BaseAgent):
                 performance[name] = {}
 
         return performance
-
     def _select_best_model(self, models: Dict[str, Any], performance: Dict[str, Dict[str, float]]) -> Optional[str]:
         """Select the best performing model."""
         best_model = None

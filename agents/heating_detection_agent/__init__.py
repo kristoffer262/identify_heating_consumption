@@ -15,11 +15,20 @@ logger = logging.getLogger(__name__)
 
 
 class HeatingDetectionAgent(BaseAgent):
-    """Agent responsible for detecting heating consumption periods."""
+    """Agent responsible for detecting heating periods based on temperature.
+    
+    Temperature is the primary indicator:
+    - Below 18°C: heating is likely active
+    - Above 20°C: heating is unlikely
+    - 18-20°C: transition zone
+    
+    Also identifies baseline consumption during warm periods for decomposition.
+    """
 
     def __init__(self, config: Optional[Dict] = None):
         super().__init__("heating_detection_agent", config)
         self.heating_threshold = self.config.get("heating_threshold", 18)  # Celsius
+        self.non_heating_threshold = self.config.get("non_heating_threshold", 20)  # Celsius
         self.min_heating_hours = self.config.get("min_heating_hours", 2)
 
     def run(self, data: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
@@ -49,29 +58,28 @@ class HeatingDetectionAgent(BaseAgent):
         return detected_data
 
     def _detect_heating_periods(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Detect heating periods in consumption data."""
+        """Detect heating periods based primarily on temperature.
+        
+        Temperature < 18°C indicates heating is likely needed.
+        Also calculates baseline consumption for non-heating periods.
+        """
         df = df.copy()
 
-        # Method 1: Temperature-based detection (if temperature data available)
+        # Primary method: Temperature-based detection (most reliable)
         if 'temperature' in df.columns and df['temperature'].notna().sum() > 0:
             df['heating_detected_temp'] = self._temperature_based_detection(df)
+            df['heating_detected'] = df['heating_detected_temp']  # Use temperature as primary
         else:
-            df['heating_detected_temp'] = 0  # No temperature data available
+            # Fallback to pattern-based if no temperature data
+            df['heating_detected'] = self._pattern_based_detection(df)
 
-        # Method 2: Consumption pattern-based detection
-        df['heating_detected_pattern'] = self._pattern_based_detection(df)
-
-        # Method 3: Clustering-based detection
-        df['heating_detected_cluster'] = self._clustering_based_detection(df)
-
-        # Combined detection (majority vote or fallback to pattern-based)
-        heating_cols = [col for col in df.columns if col.startswith('heating_detected_')]
-        if len(heating_cols) > 1:
-            # Use pattern and cluster methods if temperature not available
-            active_cols = [col for col in heating_cols if col != 'heating_detected_temp' or df['heating_detected_temp'].sum() > 0]
-            df['heating_detected'] = df[active_cols].mean(axis=1).round().astype(int)
+        # Calculate baseline consumption (from non-heating periods)
+        if 'temperature' in df.columns:
+            df['is_non_heating_period'] = df['temperature'] > self.non_heating_threshold
+            df['baseline_consumption'] = self._calculate_baseline(df)
         else:
-            df['heating_detected'] = df['heating_detected_pattern']
+            df['is_non_heating_period'] = 0
+            df['baseline_consumption'] = 0
 
         # Apply minimum duration filter
         df['heating_detected'] = self._filter_minimum_duration(df['heating_detected'])
@@ -79,8 +87,36 @@ class HeatingDetectionAgent(BaseAgent):
         return df
 
     def _temperature_based_detection(self, df: pd.DataFrame) -> pd.Series:
-        """Detect heating based on temperature thresholds."""
+        """Detect heating based on temperature threshold.
+        
+        Primary method: Cold temperatures require heating.
+        """
         return (df['temperature'] < self.heating_threshold).astype(int)
+
+    def _calculate_baseline(self, df: pd.DataFrame) -> pd.Series:
+        """Calculate baseline (non-heating) consumption from warm periods.
+        
+        Baseline is the consumption level when heating is not needed (temp > 20°C).
+        This represents the consumption for non-heating purposes.
+        """
+        consumption_cols = [col for col in df.columns if any(keyword in col.lower() for keyword in ['consumption', 'energy', 'kwh'])]
+        
+        if not consumption_cols:
+            return pd.Series(0, index=df.index)
+
+        consumption = df[consumption_cols[0]]
+        non_heating_mask = df.get('is_non_heating_period', df['temperature'] > self.non_heating_threshold)
+
+        # Calculate baseline from non-heating periods
+        if non_heating_mask.sum() > 0:
+            # Use median of warm periods as baseline (more robust than mean)
+            baseline_value = consumption[non_heating_mask].median()
+        else:
+            # Fallback: use overall minimum or 25th percentile
+            baseline_value = consumption.quantile(0.25)
+
+        # Return baseline for all periods (constant value)
+        return pd.Series(baseline_value, index=df.index)
 
     def _pattern_based_detection(self, df: pd.DataFrame) -> pd.Series:
         """Detect heating based on consumption patterns."""

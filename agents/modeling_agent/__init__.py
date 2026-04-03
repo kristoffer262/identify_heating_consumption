@@ -22,7 +22,15 @@ logger = logging.getLogger(__name__)
 
 
 class ModelingAgent(BaseAgent):
-    """Agent responsible for building and training models."""
+    """Agent responsible for building and training models to predict heating consumption.
+    
+    The model predicts the heating component of energy consumption based on:
+    - Temperature (main driver)
+    - Time-based patterns (hour, day, season)
+    - Baseline consumption levels
+    
+    Heating consumption = Total consumption - Baseline (non-heating) consumption
+    """
 
     def __init__(self, config: Optional[Dict] = None):
         super().__init__("modeling_agent", config)
@@ -85,28 +93,45 @@ class ModelingAgent(BaseAgent):
         return results
 
     def _prepare_modeling_data(self, df: pd.DataFrame) -> Tuple[Optional[pd.DataFrame], Optional[pd.Series]]:
-        """Prepare data for modeling."""
-        # Select features
-        feature_cols = []
-        target_col = None
-
-        # Find consumption column
+        """Prepare data for modeling heating consumption prediction.
+        
+        Target: Heating consumption = Total consumption - Baseline (non-heating) consumption
+        Features: Temperature, time patterns, and related indicators
+        """
+        # Find consumption and baseline columns
         consumption_cols = [col for col in df.columns if any(keyword in col.lower() for keyword in ['consumption', 'energy', 'kwh'])]
-        if consumption_cols:
-            target_col = consumption_cols[0]
+        
+        if not consumption_cols:
+            return None, None
 
-        # Select feature columns
-        exclude_cols = {'heating_detected', 'heating_detected_temp', 'heating_detected_pattern', 'heating_detected_cluster'}
+        consumption = df[consumption_cols[0]].copy()
+        
+        # Calculate heating consumption: total - baseline
+        if 'baseline_consumption' in df.columns:
+            heating_consumption = consumption - df['baseline_consumption']
+            # Ensure heating consumption is non-negative (can't be negative)
+            heating_consumption = heating_consumption.clip(lower=0)
+        else:
+            # Fallback if baseline not calculated
+            heating_consumption = consumption.copy()
+
+        # Select features - exclude heating labels and consumption columns
+        exclude_cols = {
+            'heating_detected', 'heating_detected_temp', 'heating_detected_pattern', 
+            'heating_detected_cluster', 'is_non_heating_period', 'baseline_consumption'
+        }
+        exclude_cols.update(consumption_cols)  # Exclude original consumption
+        
         feature_cols = [col for col in df.columns
-                       if col != target_col and col not in exclude_cols
+                       if col not in exclude_cols
                        and not col.startswith('heating_detected_')]
 
-        if not target_col or not feature_cols:
+        if not feature_cols:
             return None, None
 
         # Create feature matrix
         X = df[feature_cols].copy()
-        y = df[target_col].copy()
+        y = heating_consumption.copy()
 
         # Handle categorical features
         categorical_cols = X.select_dtypes(include=['object', 'category']).columns
